@@ -3,6 +3,7 @@ package accesscontrol
 import (
 	"fmt"
 	"strings"
+	"strings"
 
 	"golang.org/x/net/context"
 
@@ -123,7 +124,7 @@ func (r *RuleService) AuthorizeAccessToRuleGroup(ctx context.Context, user ident
 	return r.HasAccessOrError(ctx, user, eval, func() string {
 		var groupName, folderUID string
 		if len(rules) > 0 {
-			groupName = rules[0].RuleGroup
+			folderUID = strings.ReplaceAll(rules[0].NamespaceUID, "'", "\\'")
 			folderUID = strings.ReplaceAll(rules[0].NamespaceUID, "'", "\\'")
 		}
 		return fmt.Sprintf("access rule group '%s' in folder '%s'", groupName, folderUID)
