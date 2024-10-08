@@ -108,8 +108,7 @@ WHERE device_id = ? AND updated_at BETWEEN ? AND ?`
 		device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration), device.UpdatedAt.UTC().Add(time.Minute),
 	}
 	err := s.sqlStore.WithDbSession(ctx, func(dbSession *sqlstore.DBSession) error {
-		args = append([]interface{}{query}, args...)
-		result, err := dbSession.Exec(args...)
+		result, err := dbSession.Exec(query, args...)
 		if err != nil {
 			return err
 		}
@@ -174,8 +173,7 @@ updated_at = excluded.updated_at`
 	}
 
 	err := s.sqlStore.WithDbSession(ctx, func(dbSession *sqlstore.DBSession) error {
-		args = append([]any{query}, args...)
-		_, err := dbSession.Exec(args...)
+		_, err := dbSession.Exec(query, args...)
 		return err
 	})
 
