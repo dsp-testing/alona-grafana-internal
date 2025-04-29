@@ -149,8 +149,9 @@ type logWrapper struct {
 
 // Write writes log messages as bytes from proxy.
 func (lw *logWrapper) Write(p []byte) (n int, err error) {
-	withoutNewline := strings.TrimSuffix(string(p), "\n")
-	lw.logger.Error("Proxy request error", "error", withoutNewline)
+	// Redact the content to avoid logging sensitive data
+	redactedMessage := "[REDACTED]"
+	lw.logger.Error("Proxy request error", "error", redactedMessage)
 	return len(p), nil
 }
 
