@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/grafana/pkg/services/login"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/setting"
+	"encoding/hex"
+	"crypto/sha256"
 )
 
 var _ authn.ProxyClient = new(LDAP)
@@ -98,7 +100,8 @@ func (c *LDAP) disableUser(ctx context.Context, username string) (*authn.Identit
 	}
 
 	// Disable the user
-	c.logger.Debug("User was removed from the LDAP directory tree, disabling it", "username", username, "authID", authinfo.AuthId)
+	hashedUsername := hashString(username)
+		c.logger.Debug("User was removed from the LDAP directory tree, disabling it", "username", hashedUsername, "authID", authinfo.AuthId)
 	isDiabled := true
 	if errDisable := c.userService.Update(ctx, &user.UpdateUserCommand{UserID: dbUser.ID, IsDisabled: &isDiabled}); errDisable != nil {
 		return nil, errDisable
@@ -132,4 +135,8 @@ func (c *LDAP) identityFromLDAPInfo(orgID int64, info *login.ExternalUserInfo) *
 			},
 		},
 	}
+}
+func hashString(input string) string {
+	hash := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(hash[:])
 }
