@@ -242,3 +242,10 @@ func (r *RuleService) AuthorizeRuleChanges(ctx context.Context, user identity.Re
 	}
 	return nil
 }
+		break
+	default:
+		var err error
+		if b, err = json.Marshal(body); err != nil {
+			return Error(http.StatusInternalServerError, "body json marshal", err)
+		}
+	}
