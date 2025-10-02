@@ -95,157 +95,61 @@ func (r *RuleService) AuthorizeDatasourceAccessForRule(ctx context.Context, user
 			suffix = fmt.Sprintf(" of the rule UID '%s'", rule.UID)
 		}
 		return fmt.Sprintf("access one or many data sources%s", suffix)
-	})
+
+		import { css } from '@emotion/css';
+import { ErrorInfo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom-v5-compat';
+
+import { GrafanaTheme2, locationUtil, PageLayoutType } from '@grafana/data';
+import { Button, ErrorWithStack, useStyles2 } from '@grafana/ui';
+
+import { Page } from '../components/Page/Page';
+
+interface Props {
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
 }
 
-// AuthorizeDatasourceAccessForRuleGroup checks that user has access to all data sources declared by the rules in the group
-func (r *RuleService) AuthorizeDatasourceAccessForRuleGroup(ctx context.Context, user identity.Requester, rules models.RulesGroup) error {
-	ds := r.getRulesQueryEvaluator(rules...)
-	return r.HasAccessOrError(ctx, user, ds, func() string {
-		return fmt.Sprintf("access data sources for the rule group '%s'", rules[0].RuleGroup)
-	})
+export function GrafanaRouteError({ error, errorInfo }: Props) {
+  const location = useLocation();
+  const isChunkLoadingError = error?.name === 'ChunkLoadError';
+  const styles = useStyles2(getStyles);
+
+  useEffect(() => {
+    // Auto reload page 1 time if we have a chunk load error
+    if (isChunkLoadingError && location.search.indexOf('chunkNotFound') === -1) {
+      window.location.href = locationUtil.getUrlForPartial(location, { chunkNotFound: true });
+    }
+  }, [location, isChunkLoadingError]);
+
+  // Would be good to know the page navId here but needs a pretty big refactoring
+
+  return (
+    <Page navId="error" layout={PageLayoutType.Canvas}>
+      <div className={styles.container}>
+        {isChunkLoadingError && (
+          <div>
+            <h2>Unable to find application file</h2>
+            <br />
+            <h2 className="page-heading">Grafana has likely been updated. Please try reloading the page.</h2>
+            <br />
+            <Button size="md" variant="secondary" icon="repeat" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+            <ErrorWithStack title={'Error details'} error={error} errorInfo={errorInfo} />
+          </div>
+        )}
+        {!isChunkLoadingError && (
+          <ErrorWithStack title={'An unexpected error happened'} error={error} errorInfo={errorInfo} />
+        )}
+      </div>
+    </Page>
+  );
 }
 
-// HasAccessToRuleGroup checks that the identity.Requester has permissions to all rules, which means that it has permissions to:
-// - ("folders:read") read folders which contain the rules
-// - ("alert.rules:read") read alert rules in the folders
-// Returns false if the requester does not have enough permissions, and error if something went wrong during the permission evaluation.
-func (r *RuleService) HasAccessToRuleGroup(ctx context.Context, user identity.Requester, rules models.RulesGroup) (bool, error) {
-	eval := r.getRulesReadEvaluator(rules...)
-	return r.HasAccess(ctx, user, eval)
-}
-
-// AuthorizeAccessToRuleGroup checks that the identity.Requester has permissions to all rules, which means that it has permissions to:
-// - ("folders:read") read folders which contain the rules
-// - ("alert.rules:read") read alert rules in the folders
-// Returns error if at least one permission is missing or if something went wrong during the permission evaluation
-func (r *RuleService) AuthorizeAccessToRuleGroup(ctx context.Context, user identity.Requester, rules models.RulesGroup) error {
-	eval := r.getRulesReadEvaluator(rules...)
-	return r.HasAccessOrError(ctx, user, eval, func() string {
-		var groupName, folderUID string
-		if len(rules) > 0 {
-			folderUID = strings.ReplaceAll(rules[0].NamespaceUID, "'", "\\'")
-			folderUID = strings.ReplaceAll(rules[0].NamespaceUID, "'", "\\'")
-		}
-		return fmt.Sprintf("access rule group '%s' in folder '%s'", groupName, folderUID)
-	})
-}
-
-// HasAccessInFolder checks that the identity.Requester has permissions to read alert rules in the given folder,
-// which requires the following permissions:
-// - ("folders:read") read the folder
-// - ("alert.rules:read") read alert rules in the folder
-// Returns false if the requester does not have enough permissions, and error if something went wrong during the permission evaluation.
-func (r *RuleService) HasAccessInFolder(ctx context.Context, user identity.Requester, rule models.Namespaced) (bool, error) {
-	eval := accesscontrol.EvalAll(getReadFolderAccessEvaluator(rule.GetNamespaceUID()))
-	return r.HasAccess(ctx, user, eval)
-}
-
-// AuthorizeAccessInFolder checks that the identity.Requester has permissions to read alert rules in the given folder,
-// which requires the following permissions:
-// - ("folders:read") read the folder
-// - ("alert.rules:read") read alert rules in the folder
-// Returns error if at least one permission is missing or if something went wrong during the permission evaluation
-func (r *RuleService) AuthorizeAccessInFolder(ctx context.Context, user identity.Requester, rule models.Namespaced) error {
-	eval := accesscontrol.EvalAll(getReadFolderAccessEvaluator(rule.GetNamespaceUID()))
-	return r.HasAccessOrError(ctx, user, eval, func() string {
-		return fmt.Sprintf("access rules in folder '%s'", rule.GetNamespaceUID())
-	})
-}
-
-// AuthorizeRuleChanges analyzes changes in the rule group, and checks whether the changes are authorized.
-// NOTE: if there are rules for deletion, and the user does not have access to data sources that a rule uses, the rule is removed from the list.
-// If the user is not authorized to perform the changes the function returns ErrAuthorization with a description of what action is not authorized.
-func (r *RuleService) AuthorizeRuleChanges(ctx context.Context, user identity.Requester, change *store.GroupDelta) error {
-	namespaceScope := dashboards.ScopeFoldersProvider.GetResourceScopeUID(change.GroupKey.NamespaceUID)
-
-	rules, existingGroup := change.AffectedGroups[change.GroupKey]
-	if existingGroup { // not existingGroup can be when user creates a new rule group or moves existing alerts to a new group
-		if err := r.AuthorizeAccessToRuleGroup(ctx, user, rules); err != nil { // if user is not authorized to do operation in the group that is being changed
-			return err
-		}
-	} else if len(change.Delete) > 0 {
-		// add a safeguard in the case of inconsistency. If user hit this then there is a bug in the calculating of changes struct
-		return fmt.Errorf("failed to authorize changes in rule group %s. Detected %d deletes but group was not provided", change.GroupKey.RuleGroup, len(change.Delete))
-	}
-
-	if len(change.Delete) > 0 {
-		if err := r.HasAccessOrError(ctx, user, accesscontrol.EvalPermission(ruleDelete, namespaceScope), func() string {
-			return fmt.Sprintf("delete alert rules that belong to folder %s", change.GroupKey.NamespaceUID)
-		}); err != nil {
-			return err
-		}
-		for _, rule := range change.Delete {
-			if err := r.HasAccessOrError(ctx, user, r.getRulesQueryEvaluator(rule), func() string {
-				return fmt.Sprintf("delete an alert rule '%s'", rule.UID)
-			}); err != nil {
-				return err
-			}
-		}
-	}
-
-	var addAuthorized, updateAuthorized bool // these are needed to check authorization for the rule create\update only once
-	if len(change.New) > 0 {
-		if err := r.HasAccessOrError(ctx, user, accesscontrol.EvalPermission(ruleCreate, namespaceScope), func() string {
-			return fmt.Sprintf("create alert rules in the folder %s", change.GroupKey.NamespaceUID)
-		}); err != nil {
-			return err
-		}
-		addAuthorized = true
-		for _, rule := range change.New {
-			if err := r.HasAccessOrError(ctx, user, r.getRulesQueryEvaluator(rule), func() string {
-				return fmt.Sprintf("create a new alert rule '%s'", rule.Title)
-			}); err != nil {
-				return err
-			}
-		}
-		if !existingGroup {
-			// create a new group, check that user has "read" access to that new group. Otherwise, it will not be able to read it back.
-			if err := r.AuthorizeAccessToRuleGroup(ctx, user, change.New); err != nil { // if user is not authorized to do operation in the group that is being changed
-				return err
-			}
-		}
-	}
-
-	for _, rule := range change.Update {
-		if err := r.HasAccessOrError(ctx, user, r.getRulesQueryEvaluator(rule.New), func() string {
-			return fmt.Sprintf("update alert rule '%s' (UID: %s)", rule.Existing.Title, rule.Existing.UID)
-		}); err != nil {
-			return err
-		}
-
-		// Check if the rule is moved from one folder to the current. If yes, then the user must have the authorization to delete rules from the source folder and add rules to the target folder.
-		if rule.Existing.NamespaceUID != rule.New.NamespaceUID {
-			ev := accesscontrol.EvalPermission(ruleDelete, dashboards.ScopeFoldersProvider.GetResourceScopeUID(rule.Existing.NamespaceUID))
-			if err := r.HasAccessOrError(ctx, user, ev, func() string {
-				return fmt.Sprintf("move alert rules from folder %s", rule.Existing.NamespaceUID)
-			}); err != nil {
-				return err
-			}
-
-			if !addAuthorized {
-				if err := r.HasAccessOrError(ctx, user, accesscontrol.EvalPermission(ruleCreate, namespaceScope), func() string {
-					return fmt.Sprintf("move alert rules to folder '%s'", change.GroupKey.NamespaceUID)
-				}); err != nil {
-					return err
-				}
-				addAuthorized = true
-			}
-		} else if !updateAuthorized { // if it is false then the authorization was not checked. If it is true then the user is authorized to update rules
-			if err := r.HasAccessOrError(ctx, user, accesscontrol.EvalPermission(ruleUpdate, namespaceScope), func() string {
-				return fmt.Sprintf("update alert rules that belongs to folder '%s'", change.GroupKey.NamespaceUID)
-			}); err != nil {
-				return err
-			}
-			updateAuthorized = true
-		}
-	}
-	return nil
-}
-		break
-	default:
-		var err error
-		if b, err = json.Marshal(body); err != nil {
-			return Error(http.StatusInternalServerError, "body json marshal", err)
-		}
-	}
+const getStyles = (theme: GrafanaTheme2) => ({
+  container: css({
+    width: '500px',
+    margin: theme.spacing(8, 'auto'),
+  }),
+});
