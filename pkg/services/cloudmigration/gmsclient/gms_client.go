@@ -336,3 +336,73 @@ func convertResponseFromDTO(result MigrateDataResponseDTO) cloudmigration.Migrat
 		Items:  items,
 	}
 }
+}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %d:%s", session.StackID, session.AuthToken))
+
+	client := &http.Client{
+		Timeout: c.cfg.CloudMigration.GMSReportEventTimeout,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.log.Error("error sending http request for report event", "err", err.Error())
+		return
+	} else if resp.StatusCode >= 400 {
+		c.log.Error("received error response for report event", "type", event.Event, "statusCode", resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.log.Error("reading request body", "err", err.Error())
+			return
+		}
+		c.log.Error("http request error", "body", string(body))
+		return
+	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.Error("closing request body", "err", err.Error())
+		}
+	}()
+}
+
+func (c *gmsClientImpl) buildBasePath(clusterSlug string) string {
+	domain := c.cfg.CloudMigration.GMSDomain
+	if strings.HasPrefix(domain, "http://localhost") {
+		return domain
+	}
+	return fmt.Sprintf("https://cms-%s.%s/cloud-migrations", clusterSlug, domain)
+}
+
+func convertRequestToDTO(request cloudmigration.MigrateDataRequest) MigrateDataRequestDTO {
+	items := make([]MigrateDataRequestItemDTO, len(request.Items))
+	for i := 0; i < len(request.Items); i++ {
+		item := request.Items[i]
+		items[i] = MigrateDataRequestItemDTO{
+			Type:  MigrateDataType(item.Type),
+			RefID: item.RefID,
+			Name:  item.Name,
+			Data:  item.Data,
+		}
+	}
+	r := MigrateDataRequestDTO{
+		Items: items,
+	}
+	return r
+}
+
+func convertResponseFromDTO(result MigrateDataResponseDTO) cloudmigration.MigrateDataResponse {
+	items := make([]cloudmigration.CloudMigrationResource, len(result.Items))
+	for i := 0; i < len(result.Items); i++ {
+		item := result.Items[i]
+		items[i] = cloudmigration.CloudMigrationResource{
+			Type:   cloudmigration.MigrateDataType(item.Type),
+			RefID:  item.RefID,
+			Status: cloudmigration.ItemStatus(item.Status),
+			Error:  item.Error,
+		}
+	}
+	return cloudmigration.MigrateDataResponse{
+		RunUID: result.RunUID,
+		Items:  items,
+	}
+}
